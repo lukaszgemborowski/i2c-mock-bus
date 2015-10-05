@@ -26,15 +26,17 @@ struct sample_device {
 
 static int sample_send(struct i2c_client *client)
 {
-	struct i2c_msg msg;
-	static char sample_data[] = {0xaf, 0x66, 0x11, 0x22};
+	struct i2c_msg msg[2];
+	char sample_data_1[] = {0xaf, 0x66, 0x11, 0x22};
+	char sample_data_2[] = {0xab, 0xcd, 0xef};
 
-	msg.addr = client->addr;
-	msg.flags = 0;
-	msg.len = sizeof(sample_data);
-	msg.buf = sample_data;
+	msg[0].addr = msg[1].addr = client->addr;
+	msg[0].len = sizeof(sample_data_1);
+	msg[0].buf = sample_data_1;
+	msg[1].len = sizeof(sample_data_2);
+	msg[1].buf = sample_data_2;
 
-	return i2c_transfer(client->adapter, &msg, 1);
+	return i2c_transfer(client->adapter, msg, 2);
 }
 
 static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)

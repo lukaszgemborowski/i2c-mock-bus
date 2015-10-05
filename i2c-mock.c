@@ -1,19 +1,51 @@
+/*
+ * Copyright (C) 2015 Lukasz Gemborowski, lukasz.gemborowski@gmail.com
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that is will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABLILITY of FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Genernal Public License for more details.
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/delay.h>
 #include <linux/i2c.h>
-#include <linux/clk.h>
-#include <linux/errno.h>
-#include <linux/sched.h>
-#include <linux/err.h>
-#include <linux/io.h>
 #include <linux/slab.h>
-#include <linux/of_device.h>
 #include <linux/sysfs.h>
+#include <linux/list.h>
+
+struct i2c_operation {
+    struct list_head list;
+
+    u16 addr;
+    u16 len;
+    u8 data[0];
+};
+
+LIST_HEAD(i2c_operaions_list);
 
 static ssize_t datastream_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    return snprintf(buf, PAGE_SIZE, "dummy");
+    u32 size;
+    struct i2c_operation *op = list_first_entry(&i2c_operaions_list, struct i2c_operation, list);
+
+    if (list_empty(&i2c_operaions_list)) {
+        return 0;
+    }
+
+    /* copy data from i2c_operation struct */
+    size = op->len + 4;
+    memcpy(buf, &op->addr, size);
+
+    /* remove from list */
+    list_del(&op->list);
+    kfree(op);
+
+    return size;
 }
 
 static DEVICE_ATTR(datastream, 0444, datastream_show, NULL);
@@ -21,8 +53,20 @@ static DEVICE_ATTR(datastream, 0444, datastream_show, NULL);
 static int
 i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 {
-    dev_info(&adap->dev, "sending msg to 0x%x\n", msg->addr);
-	return -EIO;
+    /* allocate and copy data transferred */
+    const u32 struct_size = sizeof(struct i2c_operation) + msg->len;
+    struct i2c_operation *new_operation = kmalloc(struct_size, GFP_KERNEL);
+    new_operation->addr = msg->addr;
+    new_operation->len = msg->len;
+    memcpy(new_operation->data, msg->buf, msg->len);
+
+    /* add to list */
+    INIT_LIST_HEAD(&new_operation->list);
+    list_add_tail(&(new_operation->list), &i2c_operaions_list);
+
+    dev_info(&adap->dev, "msg to 0x%x\n", msg->addr);
+
+	return 0;
 }
 
 static int
