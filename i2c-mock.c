@@ -62,11 +62,18 @@ response_get(struct device *dev, struct device_attribute *attr, const char *buf,
 {
     mutex_lock(&response.lock);
 
+    /* free old data */
     if (response.len > 0 && response.data)
         kfree(response.data);
 
     response.len = count;
-    response.data = kmalloc(count, GFP_KERNEL); /* TODO: check allocation here */
+    response.data = kmalloc(count, GFP_KERNEL);
+
+    if (!response.data) {
+        mutex_unlock(&response.lock);
+        return -ENOMEM;
+    }
+
     memcpy(response.data, buf, count);
 
     mutex_unlock(&response.lock);
