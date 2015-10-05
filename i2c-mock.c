@@ -185,7 +185,7 @@ static int __init mock_i2c_init_driver(void)
 {
     int ret = 0;
 
-    if (i2c_add_adapter(&i2c_mock_adapter)) {
+    if ((ret = i2c_add_adapter(&i2c_mock_adapter))) {
         pr_err("i2c_mock: i2c_add_adapter failed\n");
         return ret;
     }
