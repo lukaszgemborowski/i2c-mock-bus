@@ -29,12 +29,13 @@ struct i2c_operation {
 
 struct i2c_response {
     struct mutex lock;
+    struct completion feed;
     u16 len;
     u8 *data;
 };
 
 /* lovely globals! */
-static struct i2c_response response = {__MUTEX_INITIALIZER(response.lock), 0, 0}; /* response for client driver */
+static struct i2c_response response = {__MUTEX_INITIALIZER(response.lock), COMPLETION_INITIALIZER(response.feed), 0, 0}; /* response for client driver */
 LIST_HEAD(i2c_operaions_list);
 
 static ssize_t datastream_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -61,6 +62,7 @@ static ssize_t
 response_get(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
     mutex_lock(&response.lock);
+    complete(&response.feed);
 
     /* free old data */
     if (response.len > 0 && response.data)
@@ -126,6 +128,8 @@ i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
     }
     else if (msg->flags == I2C_M_RD) {
         /* client driver want to read something. Userspace need to provide this data */
+        wait_for_completion(&response.feed);
+
         mutex_lock(&response.lock);
 
         if (response.len > 0 && response.data)
