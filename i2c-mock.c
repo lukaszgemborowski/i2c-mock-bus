@@ -83,8 +83,8 @@ response_get(struct device *dev, struct device_attribute *attr, const char *buf,
     return count;
 }
 
-static DEVICE_ATTR(datastream, 0444, datastream_show, NULL);
-static DEVICE_ATTR(response, 0222, NULL, response_get);
+static DEVICE_ATTR(datastream, S_IRUSR, datastream_show, NULL);
+static DEVICE_ATTR(response, S_IWUSR, NULL, response_get);
 
 static void
 i2c_mock_add_msg_to_list(struct i2c_msg *msg)
