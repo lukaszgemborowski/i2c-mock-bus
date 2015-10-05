@@ -50,8 +50,8 @@ static ssize_t datastream_show(struct device *dev, struct device_attribute *attr
 
 static DEVICE_ATTR(datastream, 0444, datastream_show, NULL);
 
-static int
-i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
+static void
+i2c_mock_add_msg_to_list(struct i2c_msg *msg)
 {
     /* allocate and copy data transferred */
     const u32 struct_size = sizeof(struct i2c_operation) + msg->len;
@@ -63,6 +63,17 @@ i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
     /* add to list */
     INIT_LIST_HEAD(&new_operation->list);
     list_add_tail(&(new_operation->list), &i2c_operaions_list);
+}
+
+static int
+i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
+{
+    if (msg->flags == 0) {
+        i2c_mock_add_msg_to_list(msg);
+    }
+    else {
+        dev_warn(&adap->dev, "unsupported i2c_msg::flags value: 0x%x\n", msg->flags);
+    }
 
     dev_info(&adap->dev, "msg to 0x%x\n", msg->addr);
 
@@ -78,7 +89,7 @@ i2c_mock_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	dev_info(&adap->dev, "received msgs: %d\n", num);
 
 	for (i = 0; i < num; i++) {
-		ret = i2c_mock_xfer_msg(adap, &msgs[i], (i == (num - 1)));
+		ret = i2c_mock_xfer_msg(adap, &msgs[i]);
 		dev_info(&adap->dev, "[%d/%d] ret: %d\n", i + 1, num,
 			ret);
 		if (ret < 0)
