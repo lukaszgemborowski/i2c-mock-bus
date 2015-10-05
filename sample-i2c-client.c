@@ -31,6 +31,8 @@ static int sample_send(struct i2c_client *client)
 	char sample_data_2[] = {0xab, 0xcd, 0xef};
 
 	msg[0].addr = msg[1].addr = client->addr;
+	msg[0].flags = msg[1].flags = 0;
+
 	msg[0].len = sizeof(sample_data_1);
 	msg[0].buf = sample_data_1;
 	msg[1].len = sizeof(sample_data_2);
@@ -39,9 +41,27 @@ static int sample_send(struct i2c_client *client)
 	return i2c_transfer(client->adapter, msg, 2);
 }
 
+static int read_something(struct i2c_client *client, u8 *received_byte)
+{
+	struct i2c_msg msg[2];
+	u8 to_send = 0xAB;
+
+	msg[0].addr = msg[1].addr = 0x50;
+	msg[0].len  = msg[1].len  = 1;
+
+	msg[0].buf = &to_send;
+	msg[0].flags = 0;
+
+	msg[1].buf = received_byte;
+	msg[1].flags = I2C_M_RD;
+
+	return i2c_transfer(client->adapter, msg, 2);
+}
+
 static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct sample_device *dev;
+	u8 buffer;
 
 	if (!i2c_check_functionality(client->adapter,
 		I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA |
@@ -62,6 +82,12 @@ static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 
 	if (sample_send(client) < 0) {
 		dev_err(&client->dev, "sample_send failed\n");
+	}
+
+	if (read_something(client, &buffer) > 0) {
+		dev_info(&client->dev, "received byte of value 0x%x\n", buffer);
+	} else {
+		dev_err(&client->dev, "read_something failed\n");
 	}
 
 	return 0;

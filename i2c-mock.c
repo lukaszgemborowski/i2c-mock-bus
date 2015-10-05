@@ -17,6 +17,7 @@
 #include <linux/slab.h>
 #include <linux/sysfs.h>
 #include <linux/list.h>
+#include <linux/completion.h>
 
 struct i2c_operation {
     struct list_head list;
@@ -26,6 +27,14 @@ struct i2c_operation {
     u8 data[0];
 };
 
+struct i2c_response {
+    struct mutex lock;
+    u16 len;
+    u8 *data;
+};
+
+/* lovely globals! */
+static struct i2c_response response = {__MUTEX_INITIALIZER(response.lock), 0, 0}; /* response for client driver */
 LIST_HEAD(i2c_operaions_list);
 
 static ssize_t datastream_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -48,7 +57,25 @@ static ssize_t datastream_show(struct device *dev, struct device_attribute *attr
     return size;
 }
 
+static ssize_t
+response_get(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    mutex_lock(&response.lock);
+
+    if (response.len > 0 && response.data)
+        kfree(response.data);
+
+    response.len = count;
+    response.data = kmalloc(count, GFP_KERNEL); /* TODO: check allocation here */
+    memcpy(response.data, buf, count);
+
+    mutex_unlock(&response.lock);
+
+    return count;
+}
+
 static DEVICE_ATTR(datastream, 0444, datastream_show, NULL);
+static DEVICE_ATTR(response, 0222, NULL, response_get);
 
 static void
 i2c_mock_add_msg_to_list(struct i2c_msg *msg)
@@ -66,10 +93,41 @@ i2c_mock_add_msg_to_list(struct i2c_msg *msg)
 }
 
 static int
+i2c_mock_copy_response(struct device* dev, struct i2c_msg *msg)
+{
+    if (msg->len != response.len) {
+        dev_warn(dev, "response have different length (%iB) than caller expected (%iB). Aborting.\n", response.len, msg->len);
+        return 0;
+    }
+
+    /* copy data from response buffer filled by "user" to response-i2c_msg structure. */
+    memcpy(msg->buf, response.data, msg->len);
+
+    /* release resources, we don't need them */
+    response.len = 0;
+    kfree(response.data);
+    response.data = 0;
+
+    return msg->len;
+}
+
+static int
 i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
 {
     if (msg->flags == 0) {
         i2c_mock_add_msg_to_list(msg);
+    }
+    else if (msg->flags == I2C_M_RD) {
+        /* client driver want to read something. Userspace need to provide this data */
+        mutex_lock(&response.lock);
+
+        if (response.len > 0 && response.data)
+            /* copy the data if provided */
+            i2c_mock_copy_response(&adap->dev, msg);
+        else
+            dev_warn(&adap->dev, "No response defined. Aborting\n");
+
+        mutex_unlock(&response.lock);
     }
     else {
         dev_warn(&adap->dev, "unsupported i2c_msg::flags value: 0x%x\n", msg->flags);
@@ -118,30 +176,37 @@ static struct i2c_adapter i2c_mock_adapter = {
 
 static int __init mock_i2c_init_driver(void)
 {
-    int ret = i2c_add_adapter(&i2c_mock_adapter);
+    int ret = 0;
 
-    if (ret) {
+    if (i2c_add_adapter(&i2c_mock_adapter)) {
         pr_err("i2c_mock: i2c_add_adapter failed\n");
         return ret;
     }
 
-    ret = device_create_file(&i2c_mock_adapter.dev, &dev_attr_datastream);
-
-    if (ret) {
+    if ((ret = device_create_file(&i2c_mock_adapter.dev, &dev_attr_datastream)) != 0) {
         dev_err(&i2c_mock_adapter.dev, "failure creating sysfs\n");
         goto error_1;
+    }
+
+    if((ret = device_create_file(&i2c_mock_adapter.dev, &dev_attr_response)) != 0) {
+        dev_err(&i2c_mock_adapter.dev, "failure creating sysfs\n");
+        goto error_2;
     }
 
     return 0;
 
 error_1:
     i2c_del_adapter(&i2c_mock_adapter);
+
+error_2:
+    device_remove_file(&i2c_mock_adapter.dev, &dev_attr_datastream);
     return ret;
 }
 
 static void __exit mock_i2c_exit_driver(void)
 {
     device_remove_file(&i2c_mock_adapter.dev, &dev_attr_datastream);
+    device_remove_file(&i2c_mock_adapter.dev, &dev_attr_response);
     i2c_del_adapter(&i2c_mock_adapter);
 }
 
