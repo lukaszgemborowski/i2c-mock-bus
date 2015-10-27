@@ -38,13 +38,15 @@ struct i2c_response {
 static struct i2c_response response = {__MUTEX_INITIALIZER(response.lock), COMPLETION_INITIALIZER(response.feed), 0, 0}; /* response for client driver */
 LIST_HEAD(i2c_operaions_list);
 
+struct completion new_data_notif = COMPLETION_INITIALIZER(new_data_notif);
+
 static ssize_t datastream_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
     u32 size;
     struct i2c_operation *op = list_first_entry(&i2c_operaions_list, struct i2c_operation, list);
 
-    if (list_empty(&i2c_operaions_list)) {
-        return 0;
+    while (list_empty(&i2c_operaions_list)) {
+        wait_for_completion(&new_data_notif);
     }
 
     /* copy data from i2c_operation struct */
@@ -99,6 +101,8 @@ i2c_mock_add_msg_to_list(struct i2c_msg *msg)
     /* add to list */
     INIT_LIST_HEAD(&new_operation->list);
     list_add_tail(&(new_operation->list), &i2c_operaions_list);
+
+    complete(&new_data_notif);
 }
 
 static int
