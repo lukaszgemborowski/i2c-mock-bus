@@ -24,44 +24,29 @@ struct sample_device {
 	struct i2c_client *client;
 };
 
-static int sample_send(struct i2c_client *client)
+static ssize_t
+test1_w(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct i2c_msg msg[2];
-	char sample_data_1[] = {0xaf, 0x66, 0x11, 0x22};
-	char sample_data_2[] = {0xab, 0xcd, 0xef};
+	struct sample_device *data = dev_get_drvdata(dev);
 
-	msg[0].addr = msg[1].addr = client->addr;
-	msg[0].flags = msg[1].flags = 0;
+	struct i2c_msg msg;
 
-	msg[0].len = sizeof(sample_data_1);
-	msg[0].buf = sample_data_1;
-	msg[1].len = sizeof(sample_data_2);
-	msg[1].buf = sample_data_2;
+	msg.addr = buf[0];
+	msg.flags = 0;
+	msg.len = count - 1;
+	msg.buf = (char *)buf + 1;
 
-	return i2c_transfer(client->adapter, msg, 2);
+	if (i2c_transfer(data->client->adapter, &msg, 1) > 0)
+		return count;
+	else
+		return -1;
 }
 
-static int read_something(struct i2c_client *client, u8 *received_byte)
-{
-	struct i2c_msg msg[2];
-	u8 to_send = 0xAB;
-
-	msg[0].addr = msg[1].addr = 0x50;
-	msg[0].len  = msg[1].len  = 1;
-
-	msg[0].buf = &to_send;
-	msg[0].flags = 0;
-
-	msg[1].buf = received_byte;
-	msg[1].flags = I2C_M_RD;
-
-	return i2c_transfer(client->adapter, msg, 2);
-}
+static DEVICE_ATTR(test1, S_IWUSR, NULL, test1_w);
 
 static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct sample_device *dev;
-	u8 buffer;
 
 	if (!i2c_check_functionality(client->adapter,
 		I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA |
@@ -79,15 +64,11 @@ static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 
 	dev->client = client;
 	i2c_set_clientdata(client, dev);
+	dev_set_drvdata(&client->dev, dev);
 
-	if (sample_send(client) < 0) {
-		dev_err(&client->dev, "sample_send failed\n");
-	}
-
-	if (read_something(client, &buffer) > 0) {
-		dev_info(&client->dev, "received byte of value 0x%x\n", buffer);
-	} else {
-		dev_err(&client->dev, "read_something failed\n");
+	if (device_create_file(&client->dev, &dev_attr_test1) != 0) {
+		dev_err(&client->dev, "failure creating sysfs\n");
+		return -1;
 	}
 
 	return 0;
@@ -95,6 +76,7 @@ static int sample_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 
 static int sample_i2c_remove(struct i2c_client *client)
 {
+	device_remove_file(&client->dev, &dev_attr_test1);
 	return 0;
 }
 

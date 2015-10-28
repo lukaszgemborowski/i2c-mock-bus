@@ -49,6 +49,8 @@ static ssize_t datastream_show(struct device *dev, struct device_attribute *attr
         wait_for_completion(&new_data_notif);
     }
 
+    dev_info(dev, "returning message to client\n");
+
     /* copy data from i2c_operation struct */
     size = op->len + 4;
     memcpy(buf, &op->addr, size);
@@ -128,6 +130,7 @@ static int
 i2c_mock_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
 {
     if (msg->flags == 0) {
+        dev_info(&adap->dev, "adding message to list!\n");
         i2c_mock_add_msg_to_list(msg);
     }
     else if (msg->flags == I2C_M_RD) {

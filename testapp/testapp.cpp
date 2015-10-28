@@ -17,15 +17,17 @@ public:
         datastream_path_(create_datastream_path(i2c_path)),
         response_path_(create_response_path(i2c_path))
     {
+    	std::cout << "Path1: " << datastream_path_ << std::endl;
+    	std::cout << "Path2: " << response_path_ << std::endl;
     }
 
     i2c_message read() const {
-        std::fstream f(datastream_path_);
+        std::ifstream f(datastream_path_);
         i2c_message result;
 
         f.read(reinterpret_cast<char *>(&result.addr), sizeof(i2c_message::addr));
         f.read(reinterpret_cast<char *>(&result.len), sizeof(i2c_message::len));
-        
+
         for (int i = 0; i < result.len; i ++)
             result.data.push_back(f.get());
 
@@ -37,9 +39,8 @@ public:
 private:
     std::string join_strings(const std::string &first, const std::string &second)
     {
-        std::stringstream ss (first);
-
-        ss << second;
+        std::stringstream ss;
+        ss << first << second;
         return ss.str();
     }
 
@@ -56,7 +57,6 @@ private:
 private:
     std::string datastream_path_;
     std::string response_path_;
-    std::vector<unsigned char> datastream_;
 };
 
 int main(int argc, char **argv)
@@ -67,6 +67,10 @@ int main(int argc, char **argv)
     }
 
     i2c_mock mock(argv[1]);
+
+    i2c_message msg = mock.read();
+
+    std::cout << "Received message from 0x" << std::hex << msg.addr << " of length " << msg.len << " bytes\n";
 
     return 0;
 }
